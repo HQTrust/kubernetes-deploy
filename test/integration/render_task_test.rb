@@ -53,7 +53,7 @@ class RenderTaskTest < KubernetesDeploy::TestCase
         metadata:
           name: unmanaged-pod-1-kbbbbbb-aaaa
           annotations:
-            kubernetes-deploy.shopify.io/timeout-override: 60s
+            krane.shopify.io/timeout-override: 60s
           labels:
             type: unmanaged-pod
             name: unmanaged-pod-1-kbbbbbb-aaaa
@@ -269,12 +269,12 @@ class RenderTaskTest < KubernetesDeploy::TestCase
 
   def test_render_only_adds_initial_doc_seperator_when_missing
     render = build_render_task(fixture_path('partials'))
-    fixture = 'no-doc-seperator.yml.erb'
-    expected = "---\n# This doc has no yaml seperator\nkey1: foo\n"
+    fixture = 'no-doc-separator.yml.erb'
+    expected = "---\n# The first doc has no yaml separator\nkey1: foo\n---\nkey2: bar\n"
 
-    assert_render_success(render.run(mock_output_stream, [fixture]))
+    assert_render_success(render.run(mock_output_stream, [fixture, fixture]))
     stdout_assertion do |output|
-      assert_equal expected, output
+      assert_equal "#{expected}#{expected}", output
     end
 
     mock_output_stream.rewind
@@ -306,6 +306,15 @@ class RenderTaskTest < KubernetesDeploy::TestCase
     stdout_assertion do |output|
       assert_equal expected, output
     end
+  end
+
+  def test_render_does_not_generate_extra_blank_documents_when_file_is_empty
+    renderer = build_render_task(fixture_path('collection-with-erb'))
+    assert_render_success(renderer.run(mock_output_stream, ['effectively_empty.yml.erb']))
+    stdout_assertion do |output|
+      assert_equal "", output.strip
+    end
+    assert_logs_match("Rendered effectively_empty.yml.erb successfully, but the result was blank")
   end
 
   private

@@ -19,6 +19,7 @@ if ENV["PROFILE"]
 end
 
 $LOAD_PATH.unshift(File.expand_path('../../lib', __FILE__))
+require 'krane'
 require 'kubernetes-deploy'
 require 'kubeclient'
 require 'timecop'
@@ -216,6 +217,15 @@ module KubernetesDeploy
       else
         @mock_output_stream
       end
+    end
+
+    def task_config(context: KubeclientHelper::TEST_CONTEXT, namespace: @namespace, logger: @logger)
+      KubernetesDeploy::TaskConfig.new(context, namespace, logger)
+    end
+
+    def krane_black_box(command, args = "")
+      path = File.expand_path("../../exe/krane", __FILE__)
+      Open3.capture3("#{path} #{command} #{args}")
     end
 
     private

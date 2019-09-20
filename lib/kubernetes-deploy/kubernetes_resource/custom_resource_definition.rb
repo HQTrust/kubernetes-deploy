@@ -1,11 +1,10 @@
 # frozen_string_literal: true
-require 'kubernetes-deploy/rollout_conditions'
-
 module KubernetesDeploy
   class CustomResourceDefinition < KubernetesResource
     TIMEOUT = 2.minutes
-    ROLLOUT_CONDITIONS_ANNOTATION = "kubernetes-deploy.shopify.io/instance-rollout-conditions"
-    TIMEOUT_FOR_INSTANCE_ANNOTATION = "kubernetes-deploy.shopify.io/instance-timeout"
+    ROLLOUT_CONDITIONS_ANNOTATION_SUFFIX = "instance-rollout-conditions"
+    ROLLOUT_CONDITIONS_ANNOTATION = "krane.shopify.io/#{ROLLOUT_CONDITIONS_ANNOTATION_SUFFIX}"
+    TIMEOUT_FOR_INSTANCE_ANNOTATION = "krane.shopify.io/instance-timeout"
     GLOBAL = true
 
     def deploy_succeeded?
@@ -21,7 +20,7 @@ module KubernetesDeploy
     end
 
     def timeout_for_instance
-      timeout = @definition.dig("metadata", "annotations", TIMEOUT_FOR_INSTANCE_ANNOTATION)
+      timeout = krane_annotation_value("instance-timeout")
       DurationParser.new(timeout).parse!.to_i
     rescue DurationParser::ParsingError
       nil
@@ -52,15 +51,20 @@ module KubernetesDeploy
     end
 
     def prunable?
-      prunable = @definition.dig("metadata", "annotations", "kubernetes-deploy.shopify.io/prunable")
+      prunable = krane_annotation_value("prunable")
       prunable == "true"
+    end
+
+    def predeployed?
+      predeployed = krane_annotation_value("predeployed")
+      predeployed.nil? || predeployed == "true"
     end
 
     def rollout_conditions
       return @rollout_conditions if defined?(@rollout_conditions)
 
-      @rollout_conditions = if rollout_conditions_annotation
-        RolloutConditions.from_annotation(rollout_conditions_annotation)
+      @rollout_conditions = if krane_annotation_value(ROLLOUT_CONDITIONS_ANNOTATION_SUFFIX)
+        RolloutConditions.from_annotation(krane_annotation_value(ROLLOUT_CONDITIONS_ANNOTATION_SUFFIX))
       end
     rescue RolloutConditionsError
       @rollout_conditions = nil
@@ -71,12 +75,13 @@ module KubernetesDeploy
 
       validate_rollout_conditions
     rescue RolloutConditionsError => e
-      @validation_errors << "Annotation #{ROLLOUT_CONDITIONS_ANNOTATION} on #{name} is invalid: #{e}"
+      @validation_errors << "Annotation #{krane_annotation_key(ROLLOUT_CONDITIONS_ANNOTATION_SUFFIX)} "\
+        "on #{name} is invalid: #{e}"
     end
 
     def validate_rollout_conditions
-      if rollout_conditions_annotation && @rollout_conditions_validated.nil?
-        conditions = RolloutConditions.from_annotation(rollout_conditions_annotation)
+      if krane_annotation_value(ROLLOUT_CONDITIONS_ANNOTATION_SUFFIX) && @rollout_conditions_validated.nil?
+        conditions = RolloutConditions.from_annotation(krane_annotation_value(ROLLOUT_CONDITIONS_ANNOTATION_SUFFIX))
         conditions.validate!
       end
 
@@ -92,10 +97,6 @@ module KubernetesDeploy
 
     def names_accepted_status
       names_accepted_condition["status"]
-    end
-
-    def rollout_conditions_annotation
-      @definition.dig("metadata", "annotations", ROLLOUT_CONDITIONS_ANNOTATION)
     end
   end
 end

@@ -1,8 +1,14 @@
 # frozen_string_literal: true
 require 'tempfile'
 
+require 'kubernetes-deploy/common'
 require 'kubernetes-deploy/kubeclient_builder'
 require 'kubernetes-deploy/kubectl'
+require 'kubernetes-deploy/resource_cache'
+require 'kubernetes-deploy/resource_watcher'
+require 'kubernetes-deploy/kubernetes_resource'
+require 'kubernetes-deploy/kubernetes_resource/pod'
+require 'kubernetes-deploy/runner_task_config_validator'
 
 module KubernetesDeploy
   class RunnerTask
@@ -10,8 +16,9 @@ module KubernetesDeploy
 
     attr_reader :pod_name
 
-    def initialize(namespace:, context:, logger:, max_watch_seconds: nil)
-      @logger = logger
+    def initialize(namespace:, context:, logger: nil, max_watch_seconds: nil)
+      @logger = logger || KubernetesDeploy::FormattedLogger.build(namespace, context)
+      @task_config = KubernetesDeploy::TaskConfig.new(context, namespace, @logger)
       @namespace = namespace
       @context = context
       @max_watch_seconds = max_watch_seconds
@@ -29,7 +36,11 @@ module KubernetesDeploy
       @logger.reset
 
       @logger.phase_heading("Initializing task")
-      validate_configuration(task_template, args)
+
+      @logger.info("Validating configuration")
+      verify_config!(task_template, args)
+      @logger.info("Using namespace '#{@namespace}' in context '#{@context}'")
+
       pod = build_pod(task_template, entrypoint, args, env_vars, verify_result)
       validate_pod(pod)
 
@@ -101,42 +112,13 @@ module KubernetesDeploy
       @logger.summary.add_paragraph(warning)
     end
 
-    def validate_configuration(task_template, args)
-      @logger.info("Validating configuration")
-      errors = []
-
-      if task_template.blank?
-        errors << "Task template name can't be nil"
-      end
-
-      if @namespace.blank?
-        errors << "Namespace can't be empty"
-      end
-
-      if args.blank?
-        errors << "Args can't be nil"
-      end
-
-      begin
-        kubeclient.get_namespace(@namespace) if @namespace.present?
-        @logger.info("Using namespace '#{@namespace}' in context '#{@context}'")
-
-      rescue Kubeclient::ResourceNotFoundError
-        errors << "Namespace was not found"
-      rescue Kubeclient::HttpError
-        errors << "Could not connect to kubernetes cluster"
-      rescue KubernetesDeploy::KubeclientBuilder::ContextMissingError
-        errors << "Could not connect to kubernetes cluster - context invalid"
-      end
-
-      unless errors.empty?
+    def verify_config!(task_template, args)
+      task_config_validator = RunnerTaskConfigValidator.new(task_template, args, @task_config, kubectl,
+        kubeclient_builder)
+      unless task_config_validator.valid?
         @logger.summary.add_action("Configuration invalid")
-        @logger.summary.add_paragraph(errors.map { |err| "- #{err}" }.join("\n"))
-        raise TaskConfigurationError, "Configuration invalid: #{errors.join(', ')}"
-      end
-
-      if kubectl.server_version < Gem::Version.new(MIN_KUBE_VERSION)
-        @logger.warn(KubernetesDeploy::Errors.server_version_warning(kubectl.server_version))
+        @logger.summary.add_paragraph([task_config_validator.errors].map { |err| "- #{err}" }.join("\n"))
+        raise KubernetesDeploy::TaskConfigurationError
       end
     end
 

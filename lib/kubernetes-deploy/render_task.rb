@@ -1,13 +1,13 @@
 # frozen_string_literal: true
 require 'tempfile'
 
+require 'kubernetes-deploy/common'
 require 'kubernetes-deploy/renderer'
-require 'kubernetes-deploy/template_discovery'
 
 module KubernetesDeploy
   class RenderTask
-    def initialize(logger:, current_sha:, template_dir:, bindings:)
-      @logger = logger
+    def initialize(logger: nil, current_sha:, template_dir:, bindings:)
+      @logger = logger || KubernetesDeploy::FormattedLogger.build
       @template_dir = template_dir
       @renderer = KubernetesDeploy::Renderer.new(
         current_sha: current_sha,
@@ -29,7 +29,7 @@ module KubernetesDeploy
       @logger.phase_heading("Initializing render task")
 
       filenames = if only_filenames.empty?
-        TemplateDiscovery.new(@template_dir).templates
+        Dir.foreach(@template_dir).select { |filename| filename.end_with?(".yml.erb", ".yml", ".yaml", ".yaml.erb") }
       else
         only_filenames
       end
@@ -65,14 +65,19 @@ module KubernetesDeploy
     end
 
     def render_filename(filename, stream)
-      @logger.info("Rendering #{File.basename(filename)} ...")
+      file_basename = File.basename(filename)
+      @logger.info("Rendering #{file_basename}...")
       file_content = File.read(File.join(@template_dir, filename))
       rendered_content = @renderer.render_template(filename, file_content)
-      implicit = true
-      YAML.parse_stream(rendered_content, "<rendered> #{filename}") { |d| implicit = d.implicit }
-      stream.puts "---\n" if implicit
-      stream.puts rendered_content
-      @logger.info("Rendered #{File.basename(filename)}")
+      implicit = []
+      YAML.parse_stream(rendered_content, "<rendered> #{filename}") { |d| implicit << d.implicit }
+      if rendered_content.present?
+        stream.puts "---\n" if implicit.first
+        stream.puts rendered_content
+        @logger.info("Rendered #{file_basename}")
+      else
+        @logger.warn("Rendered #{file_basename} successfully, but the result was blank")
+      end
     rescue Psych::SyntaxError => exception
       raise InvalidTemplateError.new("Template is not valid YAML. #{exception.message}", filename: filename)
     end

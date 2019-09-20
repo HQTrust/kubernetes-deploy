@@ -3,10 +3,8 @@ require 'test_helper'
 
 class EjsonSecretProvisionerTest < KubernetesDeploy::TestCase
   def test_resources_based_on_ejson_file_existence
-    stub_kubectl_response("get", "secret", "ejson-keys",
-      kwargs: { raise_if_not_found: true, attempts: 3, output_is_sensitive: true, log_failure: true },
-      resp: dummy_ejson_secret)
-
+    stub_dry_run_validation_request.times(3) # there are three secrets in the ejson
+    stub_server_dry_run_validation_request.times(3)
     assert_empty(build_provisioner(fixture_path('hello-cloud')).resources)
     refute_empty(build_provisioner(fixture_path('ejson-cloud')).resources)
   end
@@ -20,10 +18,8 @@ class EjsonSecretProvisionerTest < KubernetesDeploy::TestCase
   end
 
   def test_resource_is_built_correctly
-    stub_kubectl_response("get", "secret", "ejson-keys",
-      kwargs: { raise_if_not_found: true, attempts: 3, output_is_sensitive: true, log_failure: true },
-      resp: dummy_ejson_secret)
-
+    stub_dry_run_validation_request.times(3) # there are three secrets in the ejson
+    stub_server_dry_run_validation_request.times(3)
     resources = build_provisioner(fixture_path('ejson-cloud')).resources
     refute_empty(resources)
 
@@ -38,41 +34,28 @@ class EjsonSecretProvisionerTest < KubernetesDeploy::TestCase
       "2200e55f22dd0c93fac3832ba14842cc75fa5a99a2e01696daa30e188d465036" =>
         "139d5c2a30901dd8ae186be582ccc0a882c16f8e0bb5429884dbc7296e80669e",
     }
-    stub_kubectl_response("get", "secret", "ejson-keys",
-      kwargs: { raise_if_not_found: true, attempts: 3, output_is_sensitive: true, log_failure: true },
-      resp: dummy_ejson_secret(wrong_public))
 
     msg = "Private key for #{fixture_public_key} not found"
     assert_raises_message(KubernetesDeploy::EjsonSecretError, msg) do
-      build_provisioner.resources
+      build_provisioner(ejson_keys_secret: dummy_ejson_secret(wrong_public)).resources
     end
   end
 
   def test_run_with_bad_private_key_in_cloud_keys
     wrong_private = { fixture_public_key => "139d5c2a30901dd8ae186be582ccc0a882c16f8e0bb5429884dbc7296e80669e" }
-    stub_kubectl_response("get", "secret", "ejson-keys",
-      kwargs: { raise_if_not_found: true, attempts: 3, output_is_sensitive: true, log_failure: true },
-      resp: dummy_ejson_secret(wrong_private))
-
     assert_raises_message(KubernetesDeploy::EjsonSecretError, /Decryption failed/) do
-      build_provisioner.resources
+      build_provisioner(ejson_keys_secret: dummy_ejson_secret(wrong_private)).resources
     end
   end
 
-  def test_run_with_cloud_keys_secret_missing
-    realistic_err = "Error from server (NotFound): secrets \"ejson-keys\" not found"
-    stub_kubectl_response("get", "secret", "ejson-keys",
-      kwargs: { raise_if_not_found: true, attempts: 3, output_is_sensitive: true, log_failure: true },
-      resp: "", err: realistic_err, success: false)
-    assert_raises_message(KubernetesDeploy::EjsonSecretError, /secrets "ejson-keys" not found/) do
-      build_provisioner.resources
+  def test_no_ejson_keys_secret_provided
+    assert_raises_message(KubernetesDeploy::EjsonSecretError,
+      /Generation of Kubernetes secrets from ejson failed: Secret ejson-keys not provided, cannot decrypt secrets/) do
+      build_provisioner(ejson_keys_secret: nil).resources
     end
   end
 
   def test_run_with_file_missing_section_for_ejson_secrets_logs_warning
-    stub_kubectl_response("get", "secret", "ejson-keys",
-      kwargs: { raise_if_not_found: true, attempts: 3, output_is_sensitive: true, log_failure: true },
-      resp: dummy_ejson_secret)
     new_content = { "_public_key" => fixture_public_key, "not_the_right_key" => [] }
 
     with_ejson_file(new_content.to_json) do |target_dir|
@@ -82,9 +65,6 @@ class EjsonSecretProvisionerTest < KubernetesDeploy::TestCase
   end
 
   def test_run_with_incomplete_secret_spec
-    stub_kubectl_response("get", "secret", "ejson-keys",
-      kwargs: { raise_if_not_found: true, attempts: 3, output_is_sensitive: true, log_failure: true },
-      resp: dummy_ejson_secret)
     new_content = {
       "_public_key" => fixture_public_key,
       "kubernetes_secrets" => { "foobar" => {} },
@@ -98,7 +78,50 @@ class EjsonSecretProvisionerTest < KubernetesDeploy::TestCase
     end
   end
 
+  def test_proactively_validates_resulting_resources_and_raises_without_logging
+    stub_dry_run_validation_request
+    stub_server_dry_run_validation_request
+    KubernetesDeploy::Secret.any_instance.expects(:validation_failed?).returns(true)
+    msg = "Generation of Kubernetes secrets from ejson failed: Resulting resource Secret/catphotoscom failed validation"
+    assert_raises_message(KubernetesDeploy::EjsonSecretError, msg) do
+      build_provisioner(fixture_path('ejson-cloud')).resources
+    end
+    refute_logs_match("Secret")
+  end
+
+  def test_run_with_selector_does_not_raise_exception
+    stub_dry_run_validation_request.times(3) # there are three secrets in the ejson
+    stub_server_dry_run_validation_request.times(3) # there are three secrets in the ejson
+    provisioner = build_provisioner(
+      fixture_path('ejson-cloud'),
+      selector: KubernetesDeploy::LabelSelector.new("app" => "yay")
+    )
+    refute_empty(provisioner.resources)
+  end
+
   private
+
+  def stub_dry_run_validation_request
+    stub_kubectl_response("apply", "-f", anything, "--dry-run", "--output=name",
+      resp: dummy_secret_hash, json: false,
+      kwargs: {
+        log_failure: false,
+        output_is_sensitive: true,
+        retry_whitelist: [:client_timeout],
+        attempts: 3,
+      })
+  end
+
+  def stub_server_dry_run_validation_request
+    stub_kubectl_response("apply", "-f", anything, "--server-dry-run", "--output=name",
+      resp: dummy_secret_hash, json: false,
+      kwargs: {
+        log_failure: false,
+        output_is_sensitive: true,
+        retry_whitelist: [:client_timeout],
+        attempts: 3,
+      })
+  end
 
   def correct_ejson_key_secret_data
     {
@@ -143,14 +166,16 @@ class EjsonSecretProvisionerTest < KubernetesDeploy::TestCase
     secret
   end
 
-  def build_provisioner(dir = nil)
+  def build_provisioner(dir = nil, selector: nil, ejson_keys_secret: dummy_ejson_secret)
     dir ||= fixture_path('ejson-cloud')
     KubernetesDeploy::EjsonSecretProvisioner.new(
       namespace: 'test',
       context: KubeclientHelper::TEST_CONTEXT,
-      template_dir: dir,
+      ejson_keys_secret: ejson_keys_secret,
+      ejson_file: File.expand_path(File.join(dir, KubernetesDeploy::EjsonSecretProvisioner::EJSON_SECRETS_FILE)),
       logger: logger,
-      statsd_tags: []
+      statsd_tags: [],
+      selector: selector,
     )
   end
 end

@@ -8,3 +8,10 @@ Naming/FileName:
   Enabled: true
   Exclude:
     - lib/kubernetes-deploy.rb
+
+Sorbet/ConstantsFromStrings:
+  Enabled: false
+
+Layout/Tab:
+  Exclude:
+    - test/integration/kubernetes_deploy_test.rb

@@ -1,5 +1,84 @@
 ## next
 
+*Important!*
+- The next release will be 1.0.0, which means that master will contain breaking changes.
+
+## 0.28.0
+
+*Enhancements*
+- Officially support Kubernetes 1.15 ([#546](https://github.com/Shopify/kubernetes-deploy/pull/546))
+- Make sure that we only declare a Service of type LoadBalancer as deployed after its IP address is published. [#547](https://github.com/Shopify/kubernetes-deploy/pull/547)
+- Add more validations to `RunnerTask`. [#554](https://github.com/Shopify/kubernetes-deploy/pull/554)
+- Validate secrets with `--server-dry-run` on supported clusters. [#553](https://github.com/Shopify/kubernetes-deploy/pull/553) 
+*Bug Fixes*
+- Fix a bug in rendering where we failed to add a yaml doc separator (`---`) to
+  an implicit document if there are multiple documents in the file.
+  ([#551](https://github.com/Shopify/kubernetes-deploy/pull/551))
+
+*Other*
+- Kubernetes 1.10 is no longer officially supported as of this version ([#546](https://github.com/Shopify/kubernetes-deploy/pull/546))
+- We've added a new Krane cli. This code is in alpha. We are providing
+no warranty at this time and reserve the right to make major breaking changes including
+removing it entirely at any time. ([#256](https://github.com/Shopify/kubernetes-deploy/issues/256))
+- Deprecate `kubernetes-deploy.shopify.io` annotations in favour of `krane.shopify.io` ([#539](https://github.com/Shopify/kubernetes-deploy/pull/539))
+
+## 0.27.0
+
+*Enhancements*
+- (alpha) Introduce a new `-f` flag for `kubernetes-deploy`. Allows passing in of multiple directories and/or filenames. Currently only usable by `kubernetes-deploy`, not `kubernetes-render`. [#514](https://github.com/Shopify/kubernetes-deploy/pull/514)
+- Initial implementation of shared task validation objects. [#533](https://github.com/Shopify/kubernetes-deploy/pull/533)
+- Restructure `require`s so that requiring a given task actually gives you the dependencies you need, and doesn't give what you don't need. [#487](https://github.com/Shopify/kubernetes-deploy/pull/487)
+- **[Breaking change]** Added ServiceAccount, PodTemplate, ReplicaSet, Role, and RoleBinding to the prune whitelist.
+  * To see what resources may be affected, run `kubectl get $RESOURCE -o jsonpath='{ range .items[*] }{.metadata.namespace}{ "\t" }{.metadata.name}{ "\t" }{.metadata.annotations}{ "\n" }{ end }' --all-namespaces | grep "last-applied"`
+  * To exclude a resource from kubernetes-deploy (and kubectl apply) management, remove the last-applied annotation `kubectl annotate $RESOURCE $SECRET_NAME kubectl.kubernetes.io/last-applied-configuration-`.
+
+*Bug Fixes*
+- StatefulSets with 0 replicas explicitly specified don't fail deploy. [#540](https://github.com/Shopify/kubernetes-deploy/pull/540)
+- Search all workloads if a Pod selector doesn't match any workloads when deploying a Service. [#541](https://github.com/Shopify/kubernetes-deploy/pull/541)
+
+*Other*
+- `EjsonSecretProvisioner#new` signature has changed. `EjsonSecretProvisioner` objects no longer have access to `kubectl`. Rather, the `ejson-keys` secret used for decryption is now passed in via the calling task. Note that we only consider the `new` and `run(!)` methods of tasks (render, deploy, etc) to have inviolable APIs, so we do not consider this change breaking. [#514](https://github.com/Shopify/kubernetes-deploy/pull/514)
+
+## 0.26.7
+
+*Other*
+- Bump `googleauth` dependency. ([#512](https://github.com/Shopify/kubernetes-deploy/pull/512))
+
+## 0.26.6
+
+*Bug Fixes*
+- Re-enable support for YAML aliases when using YAML.safe_load [#510](https://github.com/Shopify/kubernetes-deploy/pull/510)
+
+## 0.26.5
+
+*Bug Fixes*
+- Support 'volumeBindingMode: WaitForFirstConsumer' condition in StorageClass. [#479](https://github.com/Shopify/kubernetes-deploy/pull/479)
+- Fix: Undefined method "merge" on LabelSelector. [#488](https://github.com/Shopify/kubernetes-deploy/pull/488)
+
+*Enhancements*
+- Officially support Kubernetes 1.14. [#461](https://github.com/Shopify/kubernetes-deploy/pull/461)
+- Allow customising which custom resources are deployed in the pre-deploy phase. [#505](https://github.com/Shopify/kubernetes-deploy/pull/505)
+
+*Other*
+- Removes special treatment of GCP authentication by upgrading to `kubeclient` 4.3. [#465](https://github.com/Shopify/kubernetes-deploy/pull/465)
+
+## 0.26.4
+
+*Bug fixes*
+- Adds several additional safeguards against the content of Secret resources being logged. [#474](https://github.com/Shopify/kubernetes-deploy/pull/474)
+
+*Enhancements*
+- Improves scalability by removing a check that caused recoverable registry problems to fail deploys. [#477](https://github.com/Shopify/kubernetes-deploy/pull/477)
+
+*Other*
+- Relaxes our dependency on the OJ gem. [#471](https://github.com/Shopify/kubernetes-deploy/pull/471)
+
+## 0.26.3
+
+*Bug fixes*
+- Fixes a bug introduced in 0.26.0 where listing multiple files in the $KUBECONFIG environment variable would throw an error ([#468](https://github.com/Shopify/kubernetes-deploy/pull/468))
+- Fixes a bug introduced in 0.26.2 where kubernetes-render started adding YAML headers to empty render results ([#467](https://github.com/Shopify/kubernetes-deploy/pull/467))
+
 ## 0.26.2
 
 *Enhancements*
@@ -7,7 +86,7 @@
 through a yaml parser. ([#454](https://github.com/Shopify/kubernetes-deploy/pull/454))
 
 *Bug fixes*
-- Remove use of deprecated feature preventing use with Kuberentes 1.14 ([#460](https://github.com/Shopify/kubernetes-deploy/pull/460))
+- Remove use of deprecated feature preventing use with Kubernetes 1.14 ([#460](https://github.com/Shopify/kubernetes-deploy/pull/460))
 
 ## 0.26.1
 

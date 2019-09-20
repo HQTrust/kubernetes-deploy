@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 require 'test_helper'
 require 'json'
+require 'kubernetes-deploy/bindings_parser'
 
 class BindingsParserTest < ::Minitest::Test
   def test_parse_json
@@ -78,6 +79,13 @@ class BindingsParserTest < ::Minitest::Test
     ["@test/fixtures/for_unit_tests/bindings.yaml", "@test/fixtures/for_unit_tests/bindings.yml"].each do |b|
       bindings.add(b)
     end
+    assert_equal(expected, bindings.parse)
+  end
+
+  def test_parses_yaml_file_with_aliases
+    expected = { "foo" => "a,b,c", "bar" => { "baz" => "bang" }, "alias" => { "baz" => "bang" } }
+    bindings = KubernetesDeploy::BindingsParser.new
+    bindings.add('@test/fixtures/for_unit_tests/bindings-with-aliases.yaml')
     assert_equal(expected, bindings.parse)
   end
 
