@@ -2,7 +2,7 @@
 module KubernetesDeploy
   class Secret < KubernetesResource
     TIMEOUT = 30.seconds
-    SENSITIVE_TEMPLATE_CONTENT = true
+    SENSITIVE_TEMPLATE_CONTENT = false
     SERVER_DRY_RUNNABLE = true
 
     def status
